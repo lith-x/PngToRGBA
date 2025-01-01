@@ -1,4 +1,5 @@
 ﻿using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace pixelraster
@@ -14,15 +15,15 @@ namespace pixelraster
             }
             else { args = ["../../../tinypng.png"]; }
             var fileBytes = File.ReadAllBytes(args[0]);
-            
+
             byte[] samplebytes = [0x12, 0x34, 0x56, 0x78];
-            IHDRData sampleData = new() {
+            IHDRData sampleData = new()
+            {
                 Width = 2,
                 Height = 2,
                 BitDepth = 4,
                 ColorType = 2
             };
-            PngChunkHandler.BitsToColorData(samplebytes, sampleData);
             // var byteArr = new ReadOnlySpan<byte>(fileBytes);
             // IHDRData tinyPngData = new()
             // {
@@ -39,6 +40,7 @@ namespace pixelraster
             // SampleOutput(tinyPngData, sampleColors);
         }
 
+        /* -------- UTILS/DEBUG -------- */
         public static void SampleOutput(IHDRData data, PixelColor[] pixels)
         {
             string outputpath;
