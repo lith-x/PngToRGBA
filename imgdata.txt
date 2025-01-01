@@ -1,0 +1,14 @@
+/* length */
+00 00 00 0D length = 13
+/* type label */
+49 48 44 52 label = "IHDR" (latin-1 encoded)
+/* data */
+00 00 03 20 width = 800
+00 00 02 58 height = 600
+08          bit depth = 8
+06          color type = 6
+00          compression method = 0
+00          filter method = 0
+00          interlace method = 0
+/* CRC */
+9a 76 82 70 (ignore)
