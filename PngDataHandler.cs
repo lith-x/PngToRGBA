@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace pixelraster
 {
-    // Guiding philosophy: use max size that spec allows, stuff relevant data in that, pass that around w/ bitdepth.
     public static class PngDataHandler
     {
         private static readonly int[] ColorSampleCountMap = [1, 0, 3, 1, 2, 0, 4];
@@ -19,7 +18,7 @@ namespace pixelraster
         private static int GetBytesPerScanline(byte colorType, byte bitDepth, int width) => (int)Math.Ceiling(GetBitsPerPixel(colorType, bitDepth) * width / 8.0);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ulong GetLongMask(int bigEndCoverCount) => ((1ul << bigEndCoverCount) - 1) << (sizeof(ulong) * 8 - bigEndCoverCount);
+        private static ulong GetBigEndianMask(int bigEndCoverCount) => ((1ul << bigEndCoverCount) - 1) << (sizeof(ulong) * 8 - bigEndCoverCount);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ushort SampleTo16Bits(ushort sample, byte bitDepthOfSample) =>
@@ -56,21 +55,22 @@ namespace pixelraster
         /// <returns></returns>
         public static List<Rgba> IdatToRgba(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
-            byte[] decompressed = Decompress(bytes);
-            byte[] unfiltered = Unfilter(decompressed, imageProps);
-            return BytesToRgbaList(unfiltered, imageProps, palette);
+            byte[] decompressed = DecompressIdat(bytes);
+            byte[] unfiltered = UnfilterIdat(decompressed, imageProps);
+            // TODO: de-interlacing
+            return RawIdatBytesToRgbaList(unfiltered, imageProps, palette);
         }
 
-        private static byte[] Decompress(ReadOnlySpan<byte> bytes)
+        private static byte[] DecompressIdat(byte[] bytes)
         {
-            using MemoryStream input = new(bytes.ToArray());
+            using MemoryStream input = new(bytes);
             using MemoryStream output = new();
             using ZLibStream zlib = new(input, CompressionMode.Decompress);
             zlib.CopyTo(output);
             return output.ToArray();
         }
 
-        private static byte[] Unfilter(byte[] bytes, IHDRData imageProps)
+        private static byte[] UnfilterIdat(byte[] bytes, IHDRData imageProps)
         {
             // implementing "filter method 0", handled byte by byte, no need for ptr
             List<byte> unfiltered = [];
@@ -127,31 +127,32 @@ namespace pixelraster
             };
         }
 
-        private static List<Rgba> BytesToRgbaList(byte[] bytes, IHDRData imageProps, Rgba[] palette)
+        private static List<Rgba> RawIdatBytesToRgbaList(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
             int sampleCount = ColorSampleCountMap[imageProps.ColorType];
-            int bitsPerColor = imageProps.BitDepth * sampleCount;
             List<Rgba> rgbaPixels = [];
             BitPointer ptr = new();
 
             for (int i = 0; i < imageProps.Width * imageProps.Height; i++)
             {
-                // packed big-endian long with padded 0's
                 ulong rawPixelData = GetNextPixelData(bytes, ptr, imageProps.BitDepth, imageProps.ColorType);
-                ulong sampleMask = GetLongMask(imageProps.BitDepth);
+                ulong sampleMask = GetBigEndianMask(imageProps.BitDepth);
                 List<ushort> samples = [];
                 for (int sampleIdx = 0; sampleIdx < sampleCount; sampleIdx++, sampleMask >>= imageProps.BitDepth)
                 {
                     samples.Add((ushort)((rawPixelData & sampleMask) >> (sizeof(ulong) * 8 - (sampleIdx + 1) * imageProps.BitDepth)));
                 }
-                rgbaPixels.Add(SampleToColor(samples, imageProps, palette));
+                rgbaPixels.Add(SamplesToRgba(samples, imageProps, palette));
             }
             return rgbaPixels;
         }
 
+        /// <summary>
+        /// Packs all following pixel data into a big-endian ulong.
+        /// </summary>
+        /// <remarks>(Moves ptr to next pixel.)</remarks>
         private static ulong GetNextPixelData(byte[] bytes, BitPointer ptr, int bitDepth, int colorType)
         {
-            // I completely f**ked this up. Redo this with bytePtr/offsetPtr instead of "ptr".
             int sampleCount = ColorSampleCountMap[colorType];
             ulong bits = 0;
             ulong sampleBits;
@@ -165,30 +166,11 @@ namespace pixelraster
                     sampleBits = ((ulong)bytes[ptr.Byte] << 8) & bytes[ptr.Byte + 1];
                 }
                 bits += sampleBits;
-                /*
-                data size (samples * bitdepths):
-                0 : 1,2,4,8,16
-                2 : 24, 48
-                3 : 1,2,4,8
-                4 : 16, 32
-                6 : 32, 64
-
-                dataLong <<= bitDepth
-                relevantBitsForSample = byte[ptr.Byte] >> (8 - ptr.Offset) - bitdepth
-                dataLong += relevantBitsForSample
-                
-                A: 87654321
-                      ^
-                   00000011
-                   00001100
-                B: 87654321
-                       ^^^^
-                */
             }
             return bits << (sizeof(ulong) * sizeof(byte) - bitDepth * sampleCount);
         }
 
-        private static Rgba SampleToColor(List<ushort> samples, IHDRData imageProps, Rgba[] palette)
+        private static Rgba SamplesToRgba(List<ushort> samples, IHDRData imageProps, Rgba[] palette)
         {
             if (imageProps.ColorType == 3) return palette[samples[0]];
 

@@ -7,7 +7,6 @@ namespace pixelraster
     {
         private static readonly byte[] PNG_HEADER = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-        /// <remark><paramref name="ptr"/> should point to the head of the IHDR chunk (data length field).</remark>
         public static Rgba[][] ProcessFile(ReadOnlySpan<byte> fileBytes)
         {
             // header
@@ -56,11 +55,11 @@ namespace pixelraster
                         break;
                     case "IEND":
                     default:
-                        // skip over all other chunks
+                        // TODO: handle more chunk types
                         ptr.Byte += chunkDataLength;
                         break;
                 }
-                ptr.Byte += 4; // skip CRC check
+                ptr.Byte += 4; // TODO: handle CRC check?
             }
             return PngDataHandler.IdatToRgba([.. IDATData], imageProps, [.. palette])
                 .Chunk(imageProps.Width).ToArray();
@@ -74,31 +73,3 @@ namespace pixelraster
         }
     }
 }
-/*
-
-fix the god-awful conversion: think of how to get indexing values to point
-to relevant bits
-
-bit depth = 1, samples = 1
-80 00 00 00  00 00 00 00
-
-bit depth = 2, samples = 2
-F0 00 00 00  00 00 00 00
-
-bit depth = 4, samples = 3
-FF F0 00 00  00 00 00 00
-
-(ranges inclusive, determined by bitdepth)
-first sample: 60-63 -> 0-3
-second sample: 56-59 -> 0-3
-third sample: 52-55 -> 0-3
-
-OPEN QUESTION: does 'width' include filter byte?
-
-8 * (8)
-FF FF FF FF FF FF FF FF
-FF = 255 = byte full
-
-TODO: concatenate IDAT data 
-TODO: de-interlacing
-*/
