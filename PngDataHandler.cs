@@ -72,17 +72,17 @@ namespace pixelraster
 
         private static byte[] Unfilter(byte[] bytes, IHDRData imageProps)
         {
-            // implementing "filter method 0"
+            // implementing "filter method 0", handled byte by byte, no need for ptr
             List<byte> unfiltered = [];
-            int byteWidth = imageProps.Width * imageProps.BitDepth / 8;
+            int byteWidth = (int)Math.Ceiling(imageProps.Width * imageProps.BitDepth / 8.0);
             for (int scanline = 0; scanline < imageProps.Height; scanline++)
             {
                 // scanlines start with filter type
                 byte filterType = bytes[scanline * imageProps.Width];
                 var unfilterFn = GetFilterFunc(filterType, imageProps);
-                for (int i = 1; i < byteWidth; i++)
+                for (int i = 1; i <= byteWidth; i++)
                 {
-                    byte unbyte = unfilterFn(scanline * imageProps.Width + i, bytes);
+                    byte unbyte = unfilterFn(scanline * (imageProps.Width + 1) + i, bytes);
                     unfiltered.Add(unbyte);
                 }
             }
@@ -132,11 +132,12 @@ namespace pixelraster
             int sampleCount = ColorSampleCountMap[imageProps.ColorType];
             int bitsPerColor = imageProps.BitDepth * sampleCount;
             List<Rgba> rgbaPixels = [];
+            BitPointer ptr = new();
 
             for (int i = 0; i < imageProps.Width * imageProps.Height; i++)
             {
                 // packed big-endian long with padded 0's
-                ulong rawPixelData = GetRawPixelLong(bytes, i * bitsPerColor, imageProps.BitDepth, imageProps.ColorType);
+                ulong rawPixelData = GetNextPixelData(bytes, ptr, imageProps.BitDepth, imageProps.ColorType);
                 ulong sampleMask = GetLongMask(imageProps.BitDepth);
                 List<ushort> samples = [];
                 for (int sampleIdx = 0; sampleIdx < sampleCount; sampleIdx++, sampleMask >>= imageProps.BitDepth)
@@ -148,22 +149,43 @@ namespace pixelraster
             return rgbaPixels;
         }
 
-        private static ulong GetRawPixelLong(byte[] bytes, int ptr, int bitDepth, int colorType)
+        private static ulong GetNextPixelData(byte[] bytes, BitPointer ptr, int bitDepth, int colorType)
         {
-            // pack a single pixel data into a big-endian ulong, to prevent the headache of dealing
-            // with pixel data that crosses byte boundaries (.net may offer something to remedy?).
-            // this is just a way to pack relevant data into a general package in such
-            // a way that I can actually think about how to deal with it.
-            int usedBits = bitDepth * ColorSampleCountMap[colorType];
-            int usedBytes = (int)Math.Ceiling(usedBits / 8.0);
+            // I completely f**ked this up. Redo this with bytePtr/offsetPtr instead of "ptr".
+            int sampleCount = ColorSampleCountMap[colorType];
             ulong bits = 0;
-            for (int i = ptr; i < ptr + usedBytes; i++)
+            ulong sampleBits;
+            for (int i = 0; i < sampleCount; i++, ptr.Offset += bitDepth)
             {
-                bits <<= 8;
-                bits += bytes[i];
+                bits <<= bitDepth;
+                if (bitDepth <= 8)
+                    sampleBits = (ulong)bytes[ptr.Byte] >> 8 - (ptr.Offset + bitDepth);
+                else // bitDepth == 16
+                {
+                    sampleBits = ((ulong)bytes[ptr.Byte] << 8) & bytes[ptr.Byte + 1];
+                }
+                bits += sampleBits;
+                /*
+                data size (samples * bitdepths):
+                0 : 1,2,4,8,16
+                2 : 24, 48
+                3 : 1,2,4,8
+                4 : 16, 32
+                6 : 32, 64
+
+                dataLong <<= bitDepth
+                relevantBitsForSample = byte[ptr.Byte] >> (8 - ptr.Offset) - bitdepth
+                dataLong += relevantBitsForSample
+                
+                A: 87654321
+                      ^
+                   00000011
+                   00001100
+                B: 87654321
+                       ^^^^
+                */
             }
-            bits <<= (sizeof(ulong) - usedBytes) * 8;
-            return bits & GetLongMask(usedBits);
+            return bits << (sizeof(ulong) * sizeof(byte) - bitDepth * sampleCount);
         }
 
         private static Rgba SampleToColor(List<ushort> samples, IHDRData imageProps, Rgba[] palette)
@@ -180,6 +202,21 @@ namespace pixelraster
                 6 => new(formatted[0], formatted[1], formatted[2], formatted[3]),
                 _ => throw new Exception($"Unhandled color type: {imageProps.ColorType}")
             };
+        }
+    }
+
+    public class BitPointer
+    {
+        private int _bit = 0;
+        public int Byte
+        {
+            get => _bit / 8;
+            set => _bit = value * 8 + Offset;
+        }
+        public int Offset
+        {
+            get => _bit % 8;
+            set => _bit = Byte * 8 + value;
         }
     }
 }

@@ -5,6 +5,8 @@ obj/
 # sample image files
 *.png
 *.ff
+!tinypng.png
+!tinypng.ff
 
 # Personal scratch pad
 notes.txt

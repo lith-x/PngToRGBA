@@ -81,16 +81,16 @@ namespace pixelraster
         public static void ToFaldbeld(string fileName, Rgba[][] pixels)
         {
             string outputpath;
-            if (DEBUG) outputpath = $"../../../${fileName}.ff";
+            if (DEBUG) outputpath = $"../../../{fileName}.ff";
             else outputpath = $"./{fileName}.ff";
             using FileStream file = File.Create(outputpath);
             file.Write(Encoding.ASCII.GetBytes("faldbeld"));
             Span<byte> intbytes = new(new byte[4]);
             // Width
-            BinaryPrimitives.WriteInt32BigEndian(intbytes, pixels.GetLength(1));
+            BinaryPrimitives.WriteInt32BigEndian(intbytes, pixels[0].Length);
             file.Write(intbytes);
             // Height
-            BinaryPrimitives.WriteInt32BigEndian(intbytes, pixels.GetLength(0));
+            BinaryPrimitives.WriteInt32BigEndian(intbytes, pixels.Length);
             file.Write(intbytes);
             Span<byte> pixelbyte = new(new byte[2]);
             foreach (var line in pixels)
