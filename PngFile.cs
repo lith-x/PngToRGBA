@@ -5,23 +5,28 @@ namespace pixelraster
 {
     public class PngFile
     {
+        private static readonly byte[] PNG_HEADER = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
         /// <remark><paramref name="ptr"/> should point to the head of the IHDR chunk (data length field).</remark>
-        public static List<PngChunk> ProcessFile(ref int ptr, ReadOnlySpan<byte> fileBytes)
+        public static Rgba[][] ProcessFile(ReadOnlySpan<byte> fileBytes)
         {
-            List<PngChunk> chunks = [];
+            // header
+            if (!fileBytes[..8].SequenceEqual(PNG_HEADER))
+                throw new Exception("Only PNG files can be accepted (file does not have PNG header).");
+            int ptr = 8;
             IHDRData imageProps = new();
+            List<Rgba> palette = [];
             List<byte> IDATData = [];
             while (ptr < fileBytes.Length)
             {
                 int chunkDataLength = GetNextInt(ref ptr, fileBytes);
                 string chunkLabel = Encoding.Latin1.GetString(fileBytes.Slice(ptr, 4));
                 ptr += 4;
-                IChunkData chunkData = new IHDRData { };
                 switch (chunkLabel)
                 {
                     case "IHDR":
                         {
-                            chunkData = new IHDRData
+                            imageProps = new IHDRData
                             {
                                 Width = GetNextInt(ref ptr, fileBytes),
                                 Height = GetNextInt(ref ptr, fileBytes),
@@ -31,39 +36,34 @@ namespace pixelraster
                                 FilterMethod = fileBytes[ptr++],
                                 InterlaceMethod = fileBytes[ptr++],
                             };
-                            imageProps = (IHDRData)chunkData;
                         }
                         break;
                     case "PLTE":
                         {
-                            chunkData = new PLTEData { Colors = [] };
-                            for (int i = ptr; i < ptr + chunkDataLength; i++)
-                            {
-                                ((PLTEData)chunkData).Colors.Add(PngDataHandler.HandlePaletteColorBytes(fileBytes.Slice(i, 3)));
-                            }
+                            int chunkDataEnd = ptr + chunkDataLength;
+                            for (; ptr < chunkDataEnd; ptr += 3)
+                                palette.Add(PngDataHandler.PaletteToRgba(fileBytes.Slice(ptr, 3)));
                         }
                         break;
                     case "IDAT":
                         {
-                            // decompress
-
-                            // defilter
+                            int chunkDataEnd = ptr + chunkDataLength;
+                            for (; ptr < chunkDataEnd; ptr++)
+                            {
+                                IDATData.Add(fileBytes[ptr]);
+                            }
                         }
                         break;
+                    case "IEND":
                     default:
+                        // skip over all other chunks
+                        ptr += chunkDataLength;
                         break;
                 }
-
-                chunks.Add(new PngChunk
-                {
-                    Length = chunkDataLength,
-                    Type = chunkLabel,
-                    Data = chunkData
-                });
-                break;
+                ptr += 4; // skip CRC check
             }
-
-            return chunks;
+            return PngDataHandler.IdatToRgba([.. IDATData], imageProps, [.. palette])
+                .Chunk(imageProps.Width).ToArray();
         }
 
         private static int GetNextInt(ref int ptr, ReadOnlySpan<byte> fileBytes)

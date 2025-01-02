@@ -1,23 +1,52 @@
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 
 namespace pixelraster
 {
     // Guiding philosophy: use max size that spec allows, stuff relevant data in that, pass that around w/ bitdepth.
     public static class PngDataHandler
     {
-        // One-liners
-        private static int GetBitsPerPixel(byte colorType, byte bitDepth) => ColorSampleCountMap[colorType] * bitDepth;
         private static readonly int[] ColorSampleCountMap = [1, 0, 3, 1, 2, 0, 4];
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int GetBitsPerPixel(byte colorType, byte bitDepth) => ColorSampleCountMap[colorType] * bitDepth;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetFilterBytesPerPixel(byte colorType, byte bitDepth) => Math.Max(GetBitsPerPixel(colorType, bitDepth) / 8, 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetBytesPerScanline(byte colorType, byte bitDepth, int width) => (int)Math.Ceiling(GetBitsPerPixel(colorType, bitDepth) * width / 8.0);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ulong GetLongMask(int bigEndCoverCount) => ((1ul << bigEndCoverCount) - 1) << (sizeof(ulong) * 8 - bigEndCoverCount);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ushort SampleTo16Bits(ushort sample, byte bitDepthOfSample) =>
             (ushort)Math.Round((double)sample * ((1 << sizeof(ushort) * 8) - 1) / ((1 << bitDepthOfSample) - 1));
-        public static PixelColor HandlePaletteColorBytes(ReadOnlySpan<byte> paletteBytes) =>
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Rgba PaletteToRgba(ReadOnlySpan<byte> paletteBytes) =>
             new(SampleTo16Bits(paletteBytes[0], 8),
                 SampleTo16Bits(paletteBytes[1], 8),
                 SampleTo16Bits(paletteBytes[2], 8),
                 ushort.MaxValue);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static byte GetPaethVal(byte left, byte up, byte upLeft)
+        {
+            int p = left + up - upLeft;
+            int pa = Math.Abs(p - left);
+            int pb = Math.Abs(p - up);
+            int pc = Math.Abs(p - upLeft);
+            return Math.Min(pa, Math.Min(pb, pc)) switch
+            {
+                int c when c == pa => left,
+                int c when c == pb => up,
+                _ => upLeft
+            };
+        }
+
 
         /// <summary>
         /// Takes concatenated bytes from IDAT chunks and turns them into RGBA data.
@@ -25,15 +54,12 @@ namespace pixelraster
         /// <param name="bytes"></param>
         /// <param name="imageProps"></param>
         /// <returns></returns>
-        public static List<PixelColor> IdatToRgba(byte[] bytes, IHDRData imageProps, PLTEData palette)
+        public static List<Rgba> IdatToRgba(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
             byte[] decompressed = Decompress(bytes);
             byte[] unfiltered = Unfilter(decompressed, imageProps);
-            List<PixelColor> colors = BitsToColorData(unfiltered, imageProps, palette);
-            return colors;
+            return BytesToRgbaList(unfiltered, imageProps, palette);
         }
-
-        // IHDR, PLTE, IDAT, IEND, bKGD, cHRM, gAMA, hIST, pHYs, sBIT, tEXt, tIME, tRNS, zTXt
 
         private static byte[] Decompress(ReadOnlySpan<byte> bytes)
         {
@@ -101,25 +127,11 @@ namespace pixelraster
             };
         }
 
-        private static byte GetPaethVal(byte left, byte up, byte upLeft)
-        {
-            int p = left + up - upLeft;
-            int pa = Math.Abs(p - left);
-            int pb = Math.Abs(p - up);
-            int pc = Math.Abs(p - upLeft);
-            return Math.Min(pa, Math.Min(pb, pc)) switch
-            {
-                int c when c == pa => left,
-                int c when c == pb => up,
-                _ => upLeft
-            };
-        }
-
-        private static List<PixelColor> BitsToColorData(byte[] bytes, IHDRData imageProps, PLTEData palette)
+        private static List<Rgba> BytesToRgbaList(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
             int sampleCount = ColorSampleCountMap[imageProps.ColorType];
             int bitsPerColor = imageProps.BitDepth * sampleCount;
-            List<PixelColor> rgbaPixels = [];
+            List<Rgba> rgbaPixels = [];
 
             for (int i = 0; i < imageProps.Width * imageProps.Height; i++)
             {
@@ -133,7 +145,7 @@ namespace pixelraster
                 }
                 rgbaPixels.Add(SampleToColor(samples, imageProps, palette));
             }
-            return [];
+            return rgbaPixels;
         }
 
         private static ulong GetRawPixelLong(byte[] bytes, int ptr, int bitDepth, int colorType)
@@ -154,20 +166,16 @@ namespace pixelraster
             return bits & GetLongMask(usedBits);
         }
 
-        private static PixelColor SampleToColor(List<ushort> samples, IHDRData imageProps, PLTEData palette)
+        private static Rgba SampleToColor(List<ushort> samples, IHDRData imageProps, Rgba[] palette)
         {
-            // sizedSamples[] = lerp from bitdepth to 16 bits
-            // 0: 1 val: R = val1, G = val1, B = val1, A = 0xFFFF
-            // 2: 3 val: R = val1, G = val2, B = val3, A = 0xFFFF
-            // 3: pallette index, 0-index palette (already handled, bit depth doesn't matter)
-            // 4: 2 val: R = val1, G = val1, B = val1, A = val2
-            // 6: 4 val: R = val1, G = val2, B = val3, A = val4
+            if (imageProps.ColorType == 3) return palette[samples[0]];
+
             List<ushort> formatted = [];
-            foreach (var sample in samples) formatted.Add(SampleTo16Bits(sample, imageProps.BitDepth));
-            return imageProps.ColorType switch {
+            foreach (ushort sample in samples) formatted.Add(SampleTo16Bits(sample, imageProps.BitDepth));
+            return imageProps.ColorType switch
+            {
                 0 => new(formatted[0], formatted[0], formatted[0], ushort.MaxValue),
                 2 => new(formatted[0], formatted[1], formatted[2], ushort.MaxValue),
-                3 => palette.Colors[formatted[0]],
                 4 => new(formatted[0], formatted[0], formatted[0], formatted[1]),
                 6 => new(formatted[0], formatted[1], formatted[2], formatted[3]),
                 _ => throw new Exception($"Unhandled color type: {imageProps.ColorType}")

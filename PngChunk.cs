@@ -4,20 +4,20 @@
 
 namespace pixelraster
 {
-    public readonly record struct PixelColor(ushort Red, ushort Green, ushort Blue, ushort Alpha);
+    public readonly record struct Rgba(ushort Red, ushort Green, ushort Blue, ushort Alpha);
 
     public enum ChunkType
     {
         IHDR, PLTE, IDAT, IEND, bKGD, cHRM, gAMA, hIST, pHYs, sBIT, tEXt, tIME, tRNS, zTXt
     }
 
-    public record PngChunk
-    {
-        public int Length;
-        public required string Type;
-        public required IChunkData Data;
-        public uint? CRC;
-    }
+    public record struct PngChunk
+    (
+        int Length,
+        string Type,
+        IChunkData Data,
+        uint? CRC
+    );
 
     public interface IChunkData { }
     public record struct IHDRData
@@ -33,6 +33,6 @@ namespace pixelraster
 
     public record struct PLTEData
     (
-        List<PixelColor> Colors
+        List<Rgba> Colors
     ) : IChunkData;
 }
