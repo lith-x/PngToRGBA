@@ -9,14 +9,14 @@ namespace pixelraster
 
         public static void Main(string[] args)
         {
-            if (!DEBUG && args.Length != 1)
+            if (!DEBUG && args.Length != 2)
             {
-                Console.WriteLine($"Usage: {AppDomain.CurrentDomain.FriendlyName} input.png");
+                Console.WriteLine($"Usage: {AppDomain.CurrentDomain.FriendlyName} input.png outputname");
             }
-            else { args = ["../../../tinypng.png"]; }
+            else { args = ["../../../test/img.png"]; }
             var fileBytes = File.ReadAllBytes(args[0]);
             Rgba[][] pixels = PngFile.ProcessFile(fileBytes);
-            ToFaldbeld("firstgo", pixels);
+            ToFaldbeld(args[1], pixels);
         }
 
         /// <summary>
@@ -54,6 +54,25 @@ namespace pixelraster
                     file.Write(pixelbyte);
                 }
             }
+        }
+
+        public static void WriteFileStringEarlyExit(byte[] bytes, string fileAndExt, int width)
+        {
+            var chunked = bytes.Chunk(width)
+                .Select(x => x
+                    .ToList()
+                    .Select(x => $"{x:X2} ".ToCharArray())
+                    .SelectMany(x => x)
+                    .Append('\n')
+                    .ToArray()
+                ).SelectMany(x => x)
+                .ToArray();
+            FileStream fs = File.Create($"../../../test/{fileAndExt}");
+            MemoryStream ms = new(Encoding.ASCII.GetBytes(chunked));
+            ms.CopyTo(fs);
+            ms.Close();
+            fs.Close();
+            Environment.Exit(0);
         }
     }
 }

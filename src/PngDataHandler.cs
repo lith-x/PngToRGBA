@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 
@@ -56,6 +57,7 @@ namespace pixelraster
         public static List<Rgba> IdatToRgba(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
             byte[] decompressed = DecompressIdat(bytes);
+            // Program.WriteFileStringEarlyExit(decompressed, "decompressedimg.bits", (int)Math.Ceiling(imageProps.Width * (imageProps.BitDepth * ColorSampleCountMap[imageProps.ColorType] / 8.0)) + 1);
             byte[] unfiltered = UnfilterIdat(decompressed, imageProps);
             // TODO: de-interlacing
             return RawIdatBytesToRgbaList(unfiltered, imageProps, palette);
@@ -74,15 +76,15 @@ namespace pixelraster
         {
             // implementing "filter method 0", handled byte by byte, no need for ptr
             List<byte> unfiltered = [];
-            int byteWidth = (int)Math.Ceiling(imageProps.Width * imageProps.BitDepth / 8.0);
+            // Width of scanline in bytes (extra byte at beginning as filter type)
+            int scanlineByteWidth = (int)Math.Ceiling(imageProps.Width * (imageProps.BitDepth * ColorSampleCountMap[imageProps.ColorType] / 8.0)) + 1;
             for (int scanline = 0; scanline < imageProps.Height; scanline++)
             {
-                // scanlines start with filter type
-                byte filterType = bytes[scanline * imageProps.Width];
+                byte filterType = bytes[scanline * scanlineByteWidth];
                 var unfilterFn = GetFilterFunc(filterType, imageProps);
-                for (int i = 1; i <= byteWidth; i++)
+                for (int i = 1; i < scanlineByteWidth; i++)
                 {
-                    byte unbyte = unfilterFn(scanline * (imageProps.Width + 1) + i, bytes);
+                    byte unbyte = unfilterFn(scanline * scanlineByteWidth + i, bytes);
                     unfiltered.Add(unbyte);
                 }
             }
@@ -202,3 +204,13 @@ namespace pixelraster
         }
     }
 }
+
+/*
+unfilter indexing
+
+width = 4, height = 3
+X0000
+X0000
+X0000
+scanlineByteLength * i
+*/
