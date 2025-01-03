@@ -2,7 +2,7 @@
 
 // TODO: It would be nice to transform all necessary data into a nice little record struct to pass around
 
-namespace pixelraster
+namespace PngToFF
 {
     public readonly record struct Rgba(ushort Red, ushort Green, ushort Blue, ushort Alpha);
 

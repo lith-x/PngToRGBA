@@ -1,7 +1,7 @@
 ﻿using System.Buffers.Binary;
 using System.Text;
 
-namespace pixelraster
+namespace PngToFF
 {
     public class Program
     {
@@ -13,25 +13,28 @@ namespace pixelraster
             {
                 Console.WriteLine($"Usage: {AppDomain.CurrentDomain.FriendlyName} input.png outputname");
             }
-            else { args = ["../../../test/img.png"]; }
-            var fileBytes = File.ReadAllBytes(args[0]);
-            Rgba[][] pixels = PngFile.ProcessFile(fileBytes);
-            ToFaldbeld(args[1], pixels);
+            else { args = ["../../../../test/img.png"]; }
+            // Rgba[][] pixels = FarbFeldToRgba("../../../../test/ti.ff");
+            // ToFarbfeldFile("mytinypng", pixels);
+            Rgba[][] pixels = PngFile.ProcessFile(args[0]);
+            ToFarbfeldFile(args.Length >= 2 ? args[1] : "out", pixels);
         }
 
+        // DEBUG / TESTING
+
         /// <summary>
-        /// Converts RGBA array to simplest image format I could find, "faldbeld".
+        /// Converts RGBA array to simplest image format I could find, "farbfeld"
         /// Comes with C-based conversion tools, good for testing.
         /// https://tools.suckless.org/farbfeld/
         /// </summary>
         /// <param name="fileName"></param>
         /// <param name="pixels"></param>
-        public static void ToFaldbeld(string fileName, Rgba[][] pixels)
+        public static void ToFarbfeldFile(string fileName, Rgba[][] pixels)
         {
             string outputpath;
-            outputpath = DEBUG ? $"../../../{fileName}.ff" : $"./{fileName}.ff";
+            outputpath = DEBUG ? $"../../../../test/{fileName}.ff" : $"./{fileName}.ff";
             using FileStream file = File.Create(outputpath);
-            file.Write(Encoding.ASCII.GetBytes("faldbeld"));
+            file.Write(Encoding.ASCII.GetBytes("farbfeld"));
             Span<byte> intbytes = new(new byte[4]);
             // Width
             BinaryPrimitives.WriteInt32BigEndian(intbytes, pixels[0].Length);
@@ -73,6 +76,34 @@ namespace pixelraster
             ms.Close();
             fs.Close();
             Environment.Exit(0);
+        }
+
+        public static Rgba[][] FarbFeldToRgba(string filePath)
+        {
+            ReadOnlySpan<byte> fileBytes = File.ReadAllBytes(filePath);
+            string header = Encoding.ASCII.GetString(fileBytes[..8]);
+            if (header != "farbfeld") throw new ArgumentException($"{filePath} does not contain farbfeld header.");
+            int byteWidth = BinaryPrimitives.ReadInt32BigEndian(fileBytes[8..12]) * 8;
+            int height = BinaryPrimitives.ReadInt32BigEndian(fileBytes[12..16]);
+            var rgbaBytes = fileBytes[16..];
+            List<Rgba[]> pixels = [];
+            for (int y = 0; y < height; y++)
+            {
+                List<Rgba> line = [];
+                for (int x = 0; x < byteWidth; x += 8)
+                {
+                    int pixelIdx = y * byteWidth + x;
+                    line.Add(new()
+                    {
+                        Red = (ushort)BinaryPrimitives.ReadInt16BigEndian(rgbaBytes[pixelIdx..(pixelIdx + 2)]),
+                        Green = (ushort)BinaryPrimitives.ReadInt16BigEndian(rgbaBytes[(pixelIdx + 2)..(pixelIdx + 4)]),
+                        Blue = (ushort)BinaryPrimitives.ReadInt16BigEndian(rgbaBytes[(pixelIdx + 4)..(pixelIdx + 6)]),
+                        Alpha = (ushort)BinaryPrimitives.ReadInt16BigEndian(rgbaBytes[(pixelIdx + 6)..(pixelIdx + 8)])
+                    });
+                }
+                pixels.Add([.. line]);
+            }
+            return [.. pixels];
         }
     }
 }

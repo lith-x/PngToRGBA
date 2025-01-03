@@ -1,14 +1,15 @@
 using System.Buffers.Binary;
 using System.Text;
 
-namespace pixelraster
+namespace PngToFF
 {
     public class PngFile
     {
         private static readonly byte[] PNG_HEADER = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-        public static Rgba[][] ProcessFile(ReadOnlySpan<byte> fileBytes)
+        public static Rgba[][] ProcessFile(string filePath)
         {
+            ReadOnlySpan<byte> fileBytes = File.ReadAllBytes(filePath);
             // header
             if (!fileBytes[..8].SequenceEqual(PNG_HEADER))
                 throw new Exception("Only PNG files can be accepted (file does not have PNG header).");

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 
-namespace pixelraster
+namespace PngToFF
 {
     public static class PngDataHandler
     {
@@ -57,7 +57,6 @@ namespace pixelraster
         public static List<Rgba> IdatToRgba(byte[] bytes, IHDRData imageProps, Rgba[] palette)
         {
             byte[] decompressed = DecompressIdat(bytes);
-            // Program.WriteFileStringEarlyExit(decompressed, "decompressedimg.bits", (int)Math.Ceiling(imageProps.Width * (imageProps.BitDepth * ColorSampleCountMap[imageProps.ColorType] / 8.0)) + 1);
             byte[] unfiltered = UnfilterIdat(decompressed, imageProps);
             // TODO: de-interlacing
             return RawIdatBytesToRgbaList(unfiltered, imageProps, palette);
