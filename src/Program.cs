@@ -13,7 +13,7 @@ namespace PngToFF
             {
                 Console.WriteLine($"Usage: {AppDomain.CurrentDomain.FriendlyName} input.png outputname");
             }
-            else { args = ["../../../../test/img.png"]; }
+            else { args = ["../../../../resources/avocado.png"]; }
             // Rgba[][] pixels = FarbFeldToRgba("../../../../test/ti.ff");
             // ToFarbfeldFile("mytinypng", pixels);
             Rgba[][] pixels = PngFile.ProcessFile(args[0]);
@@ -32,7 +32,7 @@ namespace PngToFF
         public static void ToFarbfeldFile(string fileName, Rgba[][] pixels)
         {
             string outputpath;
-            outputpath = DEBUG ? $"../../../../test/{fileName}.ff" : $"./{fileName}.ff";
+            outputpath = DEBUG ? $"../../../../{fileName}.ff" : $"./{fileName}.ff";
             using FileStream file = File.Create(outputpath);
             file.Write(Encoding.ASCII.GetBytes("farbfeld"));
             Span<byte> intbytes = new(new byte[4]);
@@ -70,7 +70,7 @@ namespace PngToFF
                     .ToArray()
                 ).SelectMany(x => x)
                 .ToArray();
-            FileStream fs = File.Create($"../../../test/{fileAndExt}");
+            FileStream fs = File.Create($"../../../../{fileAndExt}");
             MemoryStream ms = new(Encoding.ASCII.GetBytes(chunked));
             ms.CopyTo(fs);
             ms.Close();

@@ -5,8 +5,8 @@ namespace PngToFFTests;
 public class MinimalTests
 {
     [Theory]
-    [InlineData("../../../tinypng.png", "../../../tinypng.ff")]
-    [InlineData("../../../img.png", "../../../img.ff")]
+    [InlineData("../../../../resources/tinypng.png", "../../../../resources/tinypng.ff")]
+    [InlineData("../../../../resources/img.png", "../../../../resources/img.ff")]
     public void PngFFEquivalence(string pngPath, string ffPath)
     {
         Rgba[][] pngRgba = PngFile.ProcessFile(pngPath);

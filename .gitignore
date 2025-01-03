@@ -2,11 +2,7 @@
 bin/
 obj/
 
-# sample image files
-*.png
-*.ff
-!tinypng.png
-!tinypng.ff
+out.ff
 
 # Personal scratch pad
 notes.txt

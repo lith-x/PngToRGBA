@@ -42,7 +42,7 @@ namespace PngToFF
                         {
                             int chunkDataEnd = ptr.Byte + chunkDataLength;
                             for (; ptr.Byte < chunkDataEnd; ptr.Byte += 3)
-                                palette.Add(PngDataHandler.PaletteToRgba(fileBytes.Slice(ptr.Byte, 3)));
+                                palette.Add(PngData.PaletteToRgba(fileBytes.Slice(ptr.Byte, 3)));
                         }
                         break;
                     case "IDAT":
@@ -62,7 +62,7 @@ namespace PngToFF
                 }
                 ptr.Byte += 4; // TODO: handle CRC check?
             }
-            return PngDataHandler.IdatToRgba([.. IDATData], imageProps, [.. palette])
+            return PngData.IdatToRgba([.. IDATData], imageProps, [.. palette])
                 .Chunk(imageProps.Width).ToArray();
         }
 
