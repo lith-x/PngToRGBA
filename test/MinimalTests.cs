@@ -7,6 +7,7 @@ public class MinimalTests
     [Theory]
     [InlineData("../../../../resources/tinypng.png", "../../../../resources/tinypng.ff")]
     [InlineData("../../../../resources/img.png", "../../../../resources/img.ff")]
+    [InlineData("../../../../resources/avocado.png", "../../../../resources/avocado.ff")]
     public void PngFFEquivalence(string pngPath, string ffPath)
     {
         Rgba[][] pngRgba = PngFile.ProcessFile(pngPath);
