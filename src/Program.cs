@@ -13,7 +13,7 @@ namespace PngToFF
             {
                 Console.WriteLine($"Usage: {AppDomain.CurrentDomain.FriendlyName} input.png outputname");
             }
-            else { args = ["../../../../resources/avocado.png"]; }
+            else { args = ["../../../../resources/avocado16.png"]; }
             // Rgba[][] pixels = FarbFeldToRgba("../../../../test/ti.ff");
             // ToFarbfeldFile("mytinypng", pixels);
             Rgba[][] pixels = PngFile.ProcessFile(args[0]);

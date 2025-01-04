@@ -22,7 +22,7 @@ namespace PngToFF
         private static ulong GetBigEndianMask(int bigEndCoverCount) => ((1ul << bigEndCoverCount) - 1) << (sizeof(ulong) * 8 - bigEndCoverCount);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ushort SampleTo16Bits(ushort sample, byte bitDepthOfSample) =>
+        private static ushort SampleTo16Bits(ushort sample, byte bitDepthOfSample) => bitDepthOfSample == 16 ? sample :
             (ushort)Math.Round((double)sample * ((1 << sizeof(ushort) * 8) - 1) / ((1 << bitDepthOfSample) - 1));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -58,8 +58,6 @@ namespace PngToFF
         {
             byte[] decompressed = DecompressIdat(bytes);
             byte[] unfiltered = UnfilterIdat(decompressed, imageProps);
-            Program.WriteFileStringEarlyExit(decompressed, "unfiltered.txt", 128);
-
             // TODO: de-interlacing
             return RawIdatBytesToRgbaList(unfiltered, imageProps, palette);
         }
@@ -77,59 +75,56 @@ namespace PngToFF
         {
             // implementing "filter method 0", handled byte by byte, no need for ptr
             List<byte> unfiltered = [];
+            int bpp = GetFilterBytesPerPixel(imageProps.ColorType, imageProps.BitDepth);
             // Width of scanline in bytes (extra byte at beginning as filter type)
             int scanlineByteWidth = GetBytesPerScanline(imageProps.ColorType, imageProps.BitDepth, imageProps.Width) + 1;
             for (int scanline = 0; scanline < imageProps.Height; scanline++)
             {
-                int scanlineStart = scanline * scanlineByteWidth;
+                int scanlineStart = scanline * scanlineByteWidth + 1;
                 int scanlineEnd = (scanline + 1) * scanlineByteWidth;
-                byte filterType = bytes[scanlineStart];
-                var unfilterFn = GetFilterFunc(filterType, imageProps);
-                for (int i = scanlineStart + 1; i < scanlineEnd; i++)
+                byte filterType = bytes[scanlineStart - 1];
+                for (int i = scanlineStart; i < scanlineEnd; i++)
                 {
-                    byte unbyte = unfilterFn(i, scanlineStart, bytes);
+                    byte unbyte;
+                    switch (filterType)
+                    {
+                        case 0:
+                            { unbyte = bytes[i]; }
+                            break;
+                        case 1:
+                            {
+                                byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                                unbyte = (byte)((bytes[i] + prev) % 256);
+                            }
+                            break;
+                        case 2:
+                            {
+                                byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                                unbyte = (byte)((bytes[i] + prior) % 256);
+                            }
+                            break;
+                        case 3:
+                            {
+                                byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                                byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                                unbyte = (byte)(bytes[i] + (prev + prior) / 2.0 % 256);
+                            }
+                            break;
+                        case 4:
+                            {
+                                byte left = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                                byte up = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                                byte upLeft = (i >= scanlineStart + bpp) && scanline > 0 ? unfiltered[^(bpp + scanlineByteWidth - 1)] : (byte)0;
+                                unbyte = (byte)(bytes[i] + GetPaethVal(left, up, upLeft) % 256);
+                            }
+                            break;
+                        default:
+                            throw new Exception($"Unhandled filter type on line ${scanline}: ${filterType}");
+                    }
                     unfiltered.Add(unbyte);
                 }
             }
             return [.. unfiltered];
-        }
-
-        private static Func<int, int, byte[], byte> GetFilterFunc(byte filterType, IHDRData imageProps)
-        {
-            int bpp = GetFilterBytesPerPixel(imageProps.ColorType, imageProps.BitDepth);
-            int scanlineWidth = GetBytesPerScanline(imageProps.ColorType, imageProps.BitDepth, imageProps.Width);
-            return filterType switch
-            {
-                0 => (int ptr, int scanlineStart, byte[] bytes) => bytes[ptr],
-                1 => (int ptr, int scanlineStart, byte[] bytes) =>
-                {
-                    byte prev = ptr > scanlineStart + bpp ? bytes[ptr - bpp] : (byte)0;
-                    return (byte)((bytes[ptr] + prev) % 256);
-                }
-                ,
-                2 => (int ptr, int scanlineStart, byte[] bytes) =>
-                {
-                    byte prior = ptr > scanlineWidth ? bytes[ptr - scanlineWidth] : (byte)0;
-                    return (byte)((bytes[ptr] + prior) % 256);
-                }
-                ,
-                3 => (int ptr, int scanlineStart, byte[] bytes) =>
-                {
-                    byte prev = ptr > scanlineStart + bpp ? bytes[ptr - bpp] : (byte)0;
-                    byte prior = ptr > scanlineWidth ? bytes[ptr - scanlineWidth] : (byte)0;
-                    return (byte)((bytes[ptr] + (prev + prior) / 2.0) % 256);
-                }
-                ,
-                4 => (int ptr, int scanlineStart, byte[] bytes) =>
-                {
-                    byte left = ptr > scanlineStart + bpp ? bytes[ptr - bpp] : (byte)0;
-                    byte up = ptr >= scanlineWidth ? bytes[ptr - scanlineWidth] : (byte)0;
-                    byte upLeft = ptr > scanlineStart + bpp && ptr > scanlineWidth ? bytes[ptr - scanlineWidth - bpp] : (byte)0;
-                    return (byte)((bytes[ptr] + GetPaethVal(left, up, upLeft)) % 256);
-                }
-                ,
-                _ => throw new Exception($"Unexpected filter type: {filterType}")
-            };
         }
 
         private static List<Rgba> RawIdatBytesToRgbaList(byte[] bytes, IHDRData imageProps, Rgba[] palette)
@@ -140,9 +135,9 @@ namespace PngToFF
 
             for (int i = 0; i < imageProps.Width * imageProps.Height; i++)
             {
+                List<ushort> samples = [];
                 ulong rawPixelData = GetNextPixelData(bytes, ptr, imageProps.BitDepth, imageProps.ColorType);
                 ulong sampleMask = GetBigEndianMask(imageProps.BitDepth);
-                List<ushort> samples = [];
                 for (int sampleIdx = 0; sampleIdx < sampleCount; sampleIdx++, sampleMask >>= imageProps.BitDepth)
                 {
                     samples.Add((ushort)((rawPixelData & sampleMask) >> (sizeof(ulong) * 8 - (sampleIdx + 1) * imageProps.BitDepth)));
@@ -165,14 +160,14 @@ namespace PngToFF
             {
                 bits <<= bitDepth;
                 if (bitDepth <= 8)
-                    sampleBits = (ulong)bytes[ptr.Byte] >> 8 - (ptr.Offset + bitDepth);
+                    sampleBits = (ulong)bytes[ptr.Byte] >> (8 - (ptr.Offset + bitDepth));
                 else // bitDepth == 16
                 {
-                    sampleBits = ((ulong)bytes[ptr.Byte] << 8) & bytes[ptr.Byte + 1];
+                    sampleBits = ((ulong)bytes[ptr.Byte] << 8) | bytes[ptr.Byte + 1];
                 }
                 bits += sampleBits;
             }
-            return bits << (sizeof(ulong) * sizeof(byte) - bitDepth * sampleCount);
+            return bits << (sizeof(ulong) * 8 - bitDepth * sampleCount);
         }
 
         private static Rgba SamplesToRgba(List<ushort> samples, IHDRData imageProps, Rgba[] palette)
