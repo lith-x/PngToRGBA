@@ -83,48 +83,47 @@ namespace PngToFF
                 int scanlineStart = scanline * scanlineByteWidth + 1;
                 int scanlineEnd = (scanline + 1) * scanlineByteWidth;
                 byte filterType = bytes[scanlineStart - 1];
+                var unfilter = GetUnfilterFn(filterType, bytes, unfiltered, bpp, scanline, scanlineStart, scanlineByteWidth);
                 for (int i = scanlineStart; i < scanlineEnd; i++)
-                {
-                    byte unbyte;
-                    switch (filterType)
-                    {
-                        case 0:
-                            { unbyte = bytes[i]; }
-                            break;
-                        case 1:
-                            {
-                                byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
-                                unbyte = (byte)((bytes[i] + prev) % 256);
-                            }
-                            break;
-                        case 2:
-                            {
-                                byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
-                                unbyte = (byte)((bytes[i] + prior) % 256);
-                            }
-                            break;
-                        case 3:
-                            {
-                                byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
-                                byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
-                                unbyte = (byte)(bytes[i] + (prev + prior) / 2.0 % 256);
-                            }
-                            break;
-                        case 4:
-                            {
-                                byte left = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
-                                byte up = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
-                                byte upLeft = (i >= scanlineStart + bpp) && scanline > 0 ? unfiltered[^(bpp + scanlineByteWidth - 1)] : (byte)0;
-                                unbyte = (byte)(bytes[i] + GetPaethVal(left, up, upLeft) % 256);
-                            }
-                            break;
-                        default:
-                            throw new Exception($"Unhandled filter type on line ${scanline}: ${filterType}");
-                    }
-                    unfiltered.Add(unbyte);
-                }
+                    unfiltered.Add(unfilter(i));
             }
             return [.. unfiltered];
+        }
+
+        private static Func<int, byte> GetUnfilterFn(byte filterType, byte[] bytes, List<byte> unfiltered, int bpp, int scanline, int scanlineStart, int scanlineByteWidth)
+        {
+            return filterType switch
+            {
+                0 => (int i) => bytes[i],
+                1 => (int i) =>
+                {
+                    byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                    return (byte)((bytes[i] + prev) % 256);
+                }
+                ,
+                2 => (int i) =>
+                {
+                    byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                    return (byte)((bytes[i] + prior) % 256);
+                }
+                ,
+                3 => (int i) =>
+                {
+                    byte prev = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                    byte prior = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                    return (byte)(bytes[i] + (prev + prior) / 2.0 % 256);
+                }
+                ,
+                4 => (int i) =>
+                {
+                    byte left = (i >= scanlineStart + bpp) ? unfiltered[^bpp] : (byte)0;
+                    byte up = (scanline > 0) ? unfiltered[^(scanlineByteWidth - 1)] : (byte)0;
+                    byte upLeft = (i >= scanlineStart + bpp) && scanline > 0 ? unfiltered[^(bpp + scanlineByteWidth - 1)] : (byte)0;
+                    return (byte)(bytes[i] + GetPaethVal(left, up, upLeft) % 256);
+                }
+                ,
+                _ => throw new Exception($"Unhandled filter type on line ${scanline}: ${filterType}")
+            };
         }
 
         private static List<Rgba> RawIdatBytesToRgbaList(byte[] bytes, IHDRData imageProps, Rgba[] palette)

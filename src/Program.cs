@@ -107,3 +107,12 @@ namespace PngToFF
         }
     }
 }
+
+/*
+TODO:
+- fix up fileName args, make more consistent
+- organize code better
+- simplify IDAT decoding process if possible
+  - minimize bitshifting weirdness to one method?
+
+*/
